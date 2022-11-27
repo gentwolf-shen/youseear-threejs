@@ -1,5 +1,4 @@
 class App {
-
     constructor() {
         // WebAR 内容节点
         this.container = document.querySelector('#container');
@@ -22,16 +21,23 @@ class App {
         this.mixers = [];
 
         this.loadContainer = document.querySelector('#load-container');
+        this.featureUrl = '';
     }
 
-    run() {
+    run(setting) {
         this.addLight();
         this.render();
+
+        this.featureUrl = setting.featureUrl;
 
         // 添加WebAR处理
         this.addWebAR();
 
-        this.loadModel();
+        if (setting.type === 'model') {
+            this.loadModel(setting);
+        } else if (setting.type === 'video') {
+            this.loadVideo(setting);
+        }        
     }
 
     addLight() {
@@ -77,7 +83,7 @@ class App {
 
             // 加载特征数据，特征数据的生成请访问 www.YouSeeAR.com
             this.loadMarker = this.addLoading('特征数据加载...');
-            this.youSeeAR.loadMarker('../../../features/feature.dat');
+            this.youSeeAR.loadMarker(this.featureUrl);
         });
 
         // 域名验证状态事件
@@ -90,6 +96,7 @@ class App {
 
         // 特征数据加载事件
         this.youSeeAR.on('MarkerLoad', (markers) => {
+            console.info(markers);
             this.loadMarker.remove();
 
             // markers为数组，当前版本仅支持一个跟踪目标
@@ -113,6 +120,13 @@ class App {
             // 识别到目标后，设置为可视状态
             this.root.visible = true;
             console.info(`found ${i}`);
+
+            // 如果是播放视频
+            this.video?.play().then(() => {
+            }).catch(err => {
+                console.error(`play video error`);
+                console.info(err);
+            });
         });
 
         // 目标丢失事件
@@ -120,6 +134,9 @@ class App {
             // 目标丢失后，设置为不可视状态
             // this.root.visible = false;
             console.info(`lost ${i}`);
+
+            // 如果上播放视频
+            this.video?.pause()
         });
 
         // 跟踪事件，更新根节点的transform
@@ -142,22 +159,20 @@ class App {
         });
     }
 
-    loadModel() {
-        const url = 'assets/models/dancing-girl.glb';
-        const loader = this.getLoader(url);
+    loadModel(setting) {
+        const loader = this.getLoader(setting.assetUrl);
         if (loader == null) {
             return;
         }
 
         this.loadingModel = this.addLoading('模型加载...');
 
-        loader.load(url, (obj) => {
+        loader.load(setting.assetUrl, (obj) => {
             const player = obj.scene || obj;
 
             // 设置模型tramsform
-            player.scale.setScalar(160);
-            player.rotation.x = 270;
-            player.position.y = -60;
+            player.scale.setScalar(setting.scale);
+            player.rotation.x = setting.rotationX;
 
             if (obj.animations.length > 0) {
                 const mixer = new THREE.AnimationMixer(player);
@@ -197,6 +212,41 @@ class App {
         return loader;
     }
 
+    loadVideo(setting) {
+        this.loadingVideo = this.addLoading('视频加载...');
+
+        this.video = document.createElement('video');
+        this.video.setAttribute('preload', '');
+        this.video.setAttribute('autoplay', 'false');
+        this.video.setAttribute('src', setting.assetUrl);
+        this.video.setAttribute('playsinline', '');
+        this.video.setAttribute('loop', 'loop');
+
+        this.video.onloadedmetadata = (e) => {
+            this.video.pause();
+            const {videoWidth, videoHeight} = e.target;
+
+            let w = 1;
+            let h = 1;
+            if (videoWidth > videoHeight) {
+                h = videoHeight / videoWidth;
+            } else if (videoWidth < videoHeight) {
+                w = videoWidth / videoHeight;
+            }
+
+            const m = new THREE.MeshBasicMaterial({ map: new THREE.VideoTexture(this.video) });
+            const g = new THREE.PlaneGeometry(w, h);
+            const player = new THREE.Mesh(g, m);
+
+            // 设置模型tramsform
+            player.scale.setScalar(setting.scale);
+            // 将视频添加到跟踪的节点中
+            this.anchor.add(player);
+
+            this.loadingVideo.remove();
+        };
+    }
+
     addLoading(msg) {
         const el = document.createElement('div');
         el.setAttribute('class', 'load-item');
@@ -207,4 +257,9 @@ class App {
 }
 
 const app = new App();
-app.run();
+
+const setting = [
+    { type: 'model', featureUrl: '/assets/features/model.dat', assetUrl: '/assets/models/dancing-girl.glb', scale: 100, rotationX: Math.PI / 2 },
+    { type: 'video', featureUrl: '/assets/features/video.dat', assetUrl: '/assets/videos/1.mp4', scale: 400 },
+]
+app.run(setting[0]);
